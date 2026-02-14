@@ -36,6 +36,16 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_fonts: ^6.1.0
   image_picker: ^1.0.7
+  
+  # Backend Integration
+  http: ^1.2.0
+  shared_preferences: ^2.2.2
+  provider: ^6.1.1
+  
+  # Device Tracking & Token Management
+  device_info_plus: ^9.1.2
+  uuid: ^4.3.3
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:

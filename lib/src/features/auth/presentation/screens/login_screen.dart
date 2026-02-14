@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/service_locator.dart';
+import '../../../../core/services/api_client.dart';
 import 'otp_verification_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -13,6 +15,7 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
   bool _isButtonEnabled = false;
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -32,8 +35,22 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  void _sendOTP() {
-    if (_isButtonEnabled) {
+  Future<void> _sendOTP() async {
+    if (!_isButtonEnabled || _isLoading) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final authService = ServiceLocator().auth;
+      await authService.sendOtp(
+        phoneNumber: _phoneController.text,
+        countryCode: '+91',
+      );
+
+      if (!mounted) return;
+
       // Navigate to OTP verification screen
       Navigator.push(
         context,
@@ -43,6 +60,32 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
       );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send OTP: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -273,7 +316,7 @@ class _LoginScreenState extends State<LoginScreen> {
       width: double.infinity,
       height: buttonHeight,
       child: ElevatedButton(
-        onPressed: _isButtonEnabled ? _sendOTP : null,
+        onPressed: (_isButtonEnabled && !_isLoading) ? _sendOTP : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryBlue,
           disabledBackgroundColor: AppTheme.primaryBlue.withOpacity(0.5),
@@ -286,17 +329,26 @@ class _LoginScreenState extends State<LoginScreen> {
             vertical: isSmallScreen ? 14 : 16,
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.lock_outline, size: isSmallScreen ? 18 : 20),
-            SizedBox(width: isSmallScreen ? 6 : 8),
-            Text(
-              'Send OTP',
-              style: AppTheme.buttonText.copyWith(fontSize: fontSize),
-            ),
-          ],
-        ),
+        child: _isLoading
+            ? SizedBox(
+                height: isSmallScreen ? 18 : 20,
+                width: isSmallScreen ? 18 : 20,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.lock_outline, size: isSmallScreen ? 18 : 20),
+                  SizedBox(width: isSmallScreen ? 6 : 8),
+                  Text(
+                    'Send OTP',
+                    style: AppTheme.buttonText.copyWith(fontSize: fontSize),
+                  ),
+                ],
+              ),
       ),
     );
   }

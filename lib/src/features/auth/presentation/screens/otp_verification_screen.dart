@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/service_locator.dart';
+import '../../../../core/services/api_client.dart';
 import '../../../home/presentation/screens/home_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
@@ -18,20 +20,18 @@ class OtpVerificationScreen extends StatefulWidget {
 
 class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   final List<TextEditingController> _otpControllers = List.generate(
-    6,
+    4,
     (index) => TextEditingController(),
   );
   final List<FocusNode> _focusNodes = List.generate(
-    6,
+    4,
     (index) => FocusNode(),
   );
 
   Timer? _timer;
   int _remainingSeconds = 45;
   bool _canResend = false;
-
-  // Developer mode: OTP "0000" will work for testing
-  static const String DEV_OTP = "000000";
+  bool _isVerifying = false;
 
   @override
   void initState() {
@@ -67,51 +67,119 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     });
   }
 
-  void _resendOTP() {
-    if (_canResend) {
-      // TODO: Implement actual OTP resend logic
+  Future<void> _resendOTP() async {
+    if (!_canResend) return;
+
+    try {
+      final authService = ServiceLocator().auth;
+      await authService.sendOtp(
+        phoneNumber: widget.phoneNumber,
+        countryCode: '+91',
+      );
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('OTP resent successfully!')),
+        const SnackBar(
+          content: Text('OTP resent successfully!'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       _startTimer();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to resend OTP: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
-  void _verifyOTP() {
+  Future<void> _verifyOTP() async {
     final otp = _otpControllers.map((c) => c.text).join();
 
-    if (otp.length != 6) {
+    if (otp.length != 4) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter complete OTP')),
+        const SnackBar(
+          content: Text('Please enter complete OTP'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
 
-    // Developer mode: Accept "000000" as valid OTP
-    if (otp == DEV_OTP) {
-      _navigateToHome();
-      return;
-    }
+    if (_isVerifying) return;
 
-    // TODO: Implement actual OTP verification with backend
-    // For now, just show success
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Verifying OTP: $otp')),
-    );
-    
-    // Simulate verification
-    Future.delayed(const Duration(seconds: 1), () {
-      _navigateToHome();
+    setState(() {
+      _isVerifying = true;
     });
-  }
 
-  void _navigateToHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const HomeScreen(),
-      ),
-    );
+    try {
+      final authService = ServiceLocator().auth;
+      final result = await authService.verifyOtp(
+        phoneNumber: widget.phoneNumber,
+        otp: otp,
+      );
+
+      if (!mounted) return;
+
+      // Navigate to home screen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const HomeScreen(),
+        ),
+      );
+    } on ApiException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isVerifying = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      // Clear OTP fields on error
+      for (var controller in _otpControllers) {
+        controller.clear();
+      }
+      _focusNodes[0].requestFocus();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _isVerifying = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Verification failed: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   @override
@@ -158,7 +226,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                       fontSize: isSmallScreen ? 14 : 16,
                     ),
                     children: [
-                      const TextSpan(text: "We've sent a 6-digit code to "),
+                      const TextSpan(text: "We've sent a 4-digit code to "),
                       TextSpan(
                         text: '+91 ${widget.phoneNumber}',
                         style: const TextStyle(fontWeight: FontWeight.w600),
@@ -209,7 +277,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(6, (index) {
+      children: List.generate(4, (index) {
         return Container(
           width: boxSize,
           height: boxSize,
@@ -239,7 +307,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               counterText: '',
             ),
             onChanged: (value) {
-              if (value.isNotEmpty && index < 5) {
+              if (value.isNotEmpty && index < 3) {
                 _focusNodes[index + 1].requestFocus();
               } else if (value.isEmpty && index > 0) {
                 _focusNodes[index - 1].requestFocus();
@@ -289,13 +357,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   Widget _buildVerifyButton(bool isSmallScreen) {
     final otp = _otpControllers.map((c) => c.text).join();
-    final isComplete = otp.length == 6;
+    final isComplete = otp.length == 4;
 
     return SizedBox(
       width: double.infinity,
       height: isSmallScreen ? 50 : 56,
       child: ElevatedButton(
-        onPressed: isComplete ? _verifyOTP : null,
+        onPressed: (isComplete && !_isVerifying) ? _verifyOTP : null,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppTheme.primaryBlue,
           disabledBackgroundColor: AppTheme.primaryBlue.withOpacity(0.5),
@@ -305,19 +373,28 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              'Verify & Continue',
-              style: AppTheme.buttonText.copyWith(
-                fontSize: isSmallScreen ? 15 : 16,
+        child: _isVerifying
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    'Verify & Continue',
+                    style: AppTheme.buttonText.copyWith(
+                      fontSize: isSmallScreen ? 15 : 16,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward, size: 20),
+                ],
               ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.arrow_forward, size: 20),
-          ],
-        ),
       ),
     );
   }
